@@ -22,22 +22,46 @@ var tooltip = d3.select("body")
     .style("z-index", "10")
     .style("visibility", "hidden").attr("class", "tooltip");
 
-function ready(error, us, data) {
+function ready(error, us, data){
     if (error) throw error;
 
-
+	var totalUSVotes = 0;
     var dictCities = {};
-    data.forEach(function(d) {
+    data.forEach(function(d){ // Each line in CSV file
         //Parse the percentages
+		//console.log(d);
         d["per_gop"] = +(d["per_gop"].slice(0, -1).replace(",", "."));
         d["per_dem"] = +(d["per_dem"].slice(0, -1).replace(",", "."));
         d.result = d["per_dem"] - d["per_gop"];
         d.gop_votes = +d.votes_gop;
         d.dem_votes = +d.votes_dem;
         d.votes_total = +d.total_votes;
+		totalUSVotes += Number(d.total_votes);
         d.combined_fips = +d.combined_fips;
         dictCities[d.combined_fips] = d;
+		//console.log(d);
     });
+	console.log("Total US votes: " + totalUSVotes);
+	
+	var dems = 0;
+	var rebs = 0;
+	data.forEach(function(d){
+		var weight = Number(d.total_votes) / totalUSVotes;
+		d["weight"] = weight;
+		if(Number(d.votes_gop) > Number(d.votes_dem)){
+			d["winner"] = -0.66;
+			rebs += weight;
+		}else{
+			d["winner"] = 0.66;
+			dems += weight;
+		}
+		//d["winner"] = 
+		// Calc weight of county (d.total_votes / totalUSVotes)
+		// Calc winner
+	});
+	
+	console.log("Dems: " + dems);
+	console.log("Rebs: " + rebs);
 
     var color = d3.scaleSequential(d3.interpolateRdBu)
         .domain([-1, 1]);
@@ -70,16 +94,26 @@ function ready(error, us, data) {
     var path = d3.geoPath()
         .projection(projection);
 
-    g.selectAll("path")
+    g.selectAll("path") // County
         .data(topojson.feature(us, us.objects.counties).features)
         .enter().append("path")
         .attr("class", "tract")
-        .on("click", clicked)
-        .on("mouseover", updateDetails).on("mouseout",hideDetails)
-        .style("fill", function(d) {
+        .on("click", countryClicked)
+        .on("mouseover", updateDetails).on("mouseout", hideDetails)
+        /*.style("fill", function(d) {
             var city = dictCities[d.id];
             if (city)
                 return color(city.result);
+            else {
+                errorCount++;
+                console.log(d.id + " Not found" + " errors = " + errorCount);
+                return color(0);
+            }
+        })*/
+		.style("fill", function(d) {
+            var city = dictCities[d.id];
+            if (city)
+                return color(city.winner);
             else {
                 errorCount++;
                 console.log(d.id + " Not found" + " errors = " + errorCount);
@@ -154,9 +188,9 @@ function ready(error, us, data) {
         .attr("height", width > 767 ? 20 : 10)
         .attr("x", 100)
         .attr("y", 10)
-        .style("fill", color)
+        //.style("fill", color)
         .transition()
-        .duration(500)
+        //.duration(500)
         .attr("x", function(d) {
             return d > 0 ? 100 : 100 - wScale(-d);
         })
@@ -217,7 +251,7 @@ function ready(error, us, data) {
         .call(legendLinear);
 
     // When clicked, zoom in
-    function clicked(d) {
+    function countryClicked(d) {
         updateDetails(d);
         var x, y, k;
 
@@ -258,7 +292,9 @@ function ready(error, us, data) {
             name = "Difference " + fmt(data[0] + data[1]),
             state,
             county,
-            city;
+            city,
+			weight,
+			winner;
 
         if (d) {
             city = dictCities[d.id];
@@ -266,6 +302,8 @@ function ready(error, us, data) {
                 votes_total = city.votes_total,
                 gop_votes = city.gop_votes,
                 dem_votes = city.dem_votes,
+				weight = city.weight,
+				winner = city.winner,
                 county = city['county_name'];
                 state = city['state_abbr'];
                 data = [city["per_dem"], -city["per_gop"]];
@@ -280,14 +318,14 @@ function ready(error, us, data) {
 
         detailsBars.select("rect")
             .transition()
-            .duration(500)
+            //.duration(500)
             .attr("x", function(d) {
                 return d > 0 ? 100 : 100 - wScale(-d);
             })
             .attr("width", function(d) {
                 return d > 0 ? wScale(d) : wScale(-d);
-            })
-            .style("fill", color);
+            });
+            //.style("fill", color);
 
         detailsBars.select("text")
             .text(function(d) {
@@ -296,7 +334,7 @@ function ready(error, us, data) {
                     (d > 0 ? " Dem" : "")
             })
             .transition()
-            .duration(500)
+            //.duration(500)
             .attr("x", function(d) {
                 return d > 0 ? 100 + wScale(d) : 100 - wScale(-d);
             })
@@ -312,6 +350,8 @@ function ready(error, us, data) {
 
         // show tooltip with information from the __data__ property of the element
         var content = report_level +
+			"<b>Weight: </b>" + weight + "<br>" +
+			"<b>Winner: </b>" + winner + "<br>" +
             "<b>Hillary Clinton: </b>" + comma_fmt(dem_votes) + "<br/>" +
             "<b>Donald J. Trump: </b>" + comma_fmt(gop_votes) + "<br/>" +
             "<b>Total Votes Cast: </b>" + comma_fmt(votes_total) + "<br/>";
